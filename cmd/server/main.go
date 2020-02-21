@@ -75,6 +75,10 @@ func main() {
 		ReadTimeout:  15 * time.Second,
 	}
 
+	r.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, conf.Server.Domain, http.StatusSeeOther)
+	})
+
 	log.Fatal(server.ListenAndServe())
 }
 

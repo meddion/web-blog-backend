@@ -16,6 +16,7 @@ type Config struct {
 	Server struct {
 		Port          string `envconfig:"port" required:"true"`
 		OriginAllowed string `default:"*" split_words:"true"`
+		Domain        string `required:"true"`
 	}
 }
 

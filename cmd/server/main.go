@@ -69,7 +69,7 @@ func main() {
 
 	// Running the server with a given configuration
 	server := &http.Server{
-		Handler:      h.CORSMiddleware(conf.Server.OriginAllowed)(r), // Setting up CORS middleware
+		Handler:      h.CORSMiddleware(conf.Server.OriginAllowed + ", " + conf.Server.Domain)(r), // Setting up CORS middleware
 		Addr:         ":" + conf.Server.Port,
 		WriteTimeout: 15 * time.Second,
 		ReadTimeout:  15 * time.Second,

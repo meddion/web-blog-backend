@@ -41,7 +41,7 @@ func NewSessionAuthMiddleware(notAuthURLs ...string) (*sessionAuthMiddleware, er
 		m.notAuth[val] = struct{}{}
 	}
 	var err error
-	m.manager, err = session.NewManager("memory", "SESSION_ID", 60)
+	m.manager, err = session.NewManager("memory", "SESSION_ID", 30*3600) // 30 min
 	if err != nil {
 		return nil, fmt.Errorf("on initializing globalSessionManager: %s", err.Error())
 	}
@@ -74,7 +74,8 @@ func (m *sessionAuthMiddleware) Middleware(next http.Handler) http.Handler {
 			r = r.WithContext(context.WithValue(r.Context(), "session", session))
 		}
 		// Setting timeout for database operations
-		ctxWithTimeout, _ := context.WithTimeout(r.Context(), 3*time.Second)
+		ctxWithTimeout, cancelFunc := context.WithTimeout(r.Context(), 3*time.Second)
+		defer cancelFunc()
 		r = r.WithContext(ctxWithTimeout)
 
 		// Iterating through URI-paths which do not require an authentication from a user

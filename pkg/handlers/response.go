@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"os"
 
-	log "github.com/sirupsen/logrus"
+	"log"
 )
 
 type response struct {

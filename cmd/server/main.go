@@ -5,11 +5,12 @@ import (
 	"net/http"
 	"time"
 
+	"log"
+
 	"github.com/gorilla/mux"
 	"github.com/meddion/web-blog/pkg/config"
 	h "github.com/meddion/web-blog/pkg/handlers"
 	"github.com/meddion/web-blog/pkg/models"
-	log "github.com/sirupsen/logrus"
 )
 
 // In main we set up our endpoints (along with middleware)
@@ -26,31 +27,29 @@ func main() {
 	// Creating our router
 	r := mux.NewRouter()
 
-	// Setting up our session-auth middleware
-	// Passing routes that do not require authorization to NewSessionAuthMiddleware
-	signupEndpoint := "/signup/" + randSeq(32)
-	sessionAuthMiddleware, err := h.NewSessionAuthMiddleware(
-		"/api/account/login",
-		"/api/account"+signupEndpoint,
-		"/api/account/{name}",
-		"/api/posts/info",
-		"/api/posts/{pageNum:[0-9]+}",
-		"/api/post/{id}",
-	)
-	if err != nil {
-		log.Panic(err)
-	}
-	r.Use(sessionAuthMiddleware.Middleware)
+	// Redirecting to client
+	r.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, conf.Server.Domain, http.StatusSeeOther)
+	})
 
 	// Setting up endpoints with /api prefix in common
 	api := r.PathPrefix("/api").Subrouter()
+	// Serving static files and manipulating with them
+	s := h.NewStaticHandler(conf.Server.StaticDir)
+	r.HandleFunc("/static/{path:.*}", s.StaticHandler).Methods("GET")
+	static := api.PathPrefix("/static").Subrouter()
+	static.HandleFunc("/{path:.*}", s.AddFileHandler).Methods("POST")
+	static.HandleFunc("/{path:.*}", s.DeleteFileHandler).Methods("DELETE")
+	static.HandleFunc("/filenames/{path:.*}", s.GetFilenamesHandler).Methods("GET")
+
 	accountRouter := api.PathPrefix("/account").Subrouter()
 	accountRouter.HandleFunc("/login", h.LoginHandler).Methods("POST")
 	accountRouter.HandleFunc("/logout", h.LogoutHandler).Methods("POST", "GET")
 
-	accountRouter.HandleFunc(signupEndpoint, h.SignupHandler).Methods("POST")
-	log.Infof("To register a user send a POST request to \"<domain-name>/api/account%s\":\n", signupEndpoint)
-	log.Infoln(`{"name":"<new-login>","password": "<new-password>"}`)
+	signupHash := genRandSeqOfLen(32)
+	accountRouter.HandleFunc("/signup/"+signupHash, h.SignupHandler).Methods("POST")
+	log.Printf("To register follow \"/api/account/signup/%s\"", signupHash)
+	log.Printf(`{"name":"<new-login>","password": "<new-password>"}`)
 
 	accountRouter.HandleFunc("/{name}", h.GetAccountByNameHandler).Methods("GET")
 	accountRouter.HandleFunc("/", h.GetAccountHandler).Methods("GET")
@@ -67,6 +66,23 @@ func main() {
 	postRouter.HandleFunc("/", h.UpdatePostHandler).Methods("PUT")
 	postRouter.HandleFunc("/{id}", h.DeletePostHandler).Methods("DELETE")
 
+	// Setting up our session-auth middleware
+	// Passing routes that do not require authorization to NewSessionAuthMiddleware
+	sessionAuthMiddleware, err := h.NewSessionAuthMiddleware(
+		"/static/{path:.*}",
+		"/api/static/filenames/{path:.*}",
+		"/api/account/login",
+		"/api/account/signup/"+signupHash,
+		"/api/account/{name}",
+		"/api/posts/info",
+		"/api/posts/{pageNum:[0-9]+}",
+		"/api/post/{id}",
+	)
+	if err != nil {
+		log.Panic(err)
+	}
+	r.Use(sessionAuthMiddleware.Middleware)
+
 	// Running the server with a given configuration
 	server := &http.Server{
 		Handler:      h.CORSMiddleware(conf.Server.OriginAllowed)(r), // Setting up CORS middleware
@@ -74,15 +90,10 @@ func main() {
 		WriteTimeout: 15 * time.Second,
 		ReadTimeout:  15 * time.Second,
 	}
-
-	r.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, conf.Server.Domain, http.StatusSeeOther)
-	})
-
 	log.Fatal(server.ListenAndServe())
 }
 
-func randSeq(n int) string {
+func genRandSeqOfLen(n int) string {
 	rand.Seed(time.Now().UnixNano())
 	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 	b := make([]rune, n)

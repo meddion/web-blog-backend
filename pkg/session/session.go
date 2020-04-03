@@ -5,12 +5,11 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"sync"
 	"time"
-
-	log "github.com/sirupsen/logrus"
 )
 
 var providers = make(map[string]Provider)

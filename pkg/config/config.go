@@ -1,7 +1,7 @@
 package config
 
 import (
-	log "github.com/sirupsen/logrus"
+	"log"
 
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
@@ -17,6 +17,7 @@ type Config struct {
 		Port          string `envconfig:"port" required:"true"`
 		OriginAllowed string `default:"*" split_words:"true"`
 		Domain        string `required:"true"`
+		StaticDir     string `default:"static" split_words:"true"`
 	}
 }
 

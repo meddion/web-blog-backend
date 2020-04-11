@@ -3,13 +3,23 @@ package models
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
+	"github.com/meddion/web-blog/pkg/config"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 var db *mongo.Database
+
+func init() {
+	conf := config.GetConf()
+	// Connecting to the DB
+	if err := initDB(conf.Db.URI, conf.Db.Name); err != nil {
+		log.Fatal(err)
+	}
+}
 
 // GetDB returns *mongo.Database instance
 func GetDB() *mongo.Database {
@@ -17,7 +27,7 @@ func GetDB() *mongo.Database {
 }
 
 // InitDB initializes DB connections
-func InitDB(URI, databaseName string) error {
+func initDB(URI, databaseName string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	client, err := mongo.Connect(ctx, options.Client().ApplyURI(URI))

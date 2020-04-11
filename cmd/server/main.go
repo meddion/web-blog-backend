@@ -10,7 +10,6 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/meddion/web-blog/pkg/config"
 	h "github.com/meddion/web-blog/pkg/handlers"
-	"github.com/meddion/web-blog/pkg/models"
 )
 
 // In main we set up our endpoints (along with middleware)
@@ -18,11 +17,6 @@ import (
 func main() {
 	// Getting our config struct
 	conf := config.GetConf()
-
-	// Connecting to the DB
-	if err := models.InitDB(conf.Db.URI, conf.Db.Name); err != nil {
-		log.Fatal(err)
-	}
 
 	// Creating our router
 	r := mux.NewRouter()
@@ -34,13 +28,13 @@ func main() {
 
 	// Setting up endpoints with /api prefix in common
 	api := r.PathPrefix("/api").Subrouter()
+
 	// Serving static files and manipulating with them
-	s := h.NewStaticHandler(conf.Server.StaticDir)
-	r.HandleFunc("/static/{path:.*}", s.StaticHandler).Methods("GET")
 	static := api.PathPrefix("/static").Subrouter()
-	static.HandleFunc("/{path:.*}", s.AddFileHandler).Methods("POST")
-	static.HandleFunc("/{path:.*}", s.DeleteFileHandler).Methods("DELETE")
-	static.HandleFunc("/filenames/{path:.*}", s.GetFilenamesHandler).Methods("GET")
+	static.HandleFunc("/{path:.*}", h.AddFileHandler).Methods("POST")
+	static.HandleFunc("/{path:.*}", h.DeleteFileHandler).Methods("DELETE")
+	static.HandleFunc("/filenames/{path:.*}", h.GetFilenamesHandler).Methods("GET")
+	static.HandleFunc("/{path:.*}", h.StaticHandler).Methods("GET")
 
 	accountRouter := api.PathPrefix("/account").Subrouter()
 	accountRouter.HandleFunc("/login", h.LoginHandler).Methods("POST")
@@ -69,7 +63,7 @@ func main() {
 	// Setting up our session-auth middleware
 	// Passing routes that do not require authorization to NewSessionAuthMiddleware
 	sessionAuthMiddleware, err := h.NewSessionAuthMiddleware(
-		"/static/{path:.*}",
+		"/api/static/{path:.*}",
 		"/api/static/filenames/{path:.*}",
 		"/api/account/login",
 		"/api/account/signup/"+signupHash,

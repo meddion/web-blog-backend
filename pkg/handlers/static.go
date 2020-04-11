@@ -3,146 +3,120 @@ package handlers
 import (
 	"fmt"
 	"io/ioutil"
+	"mime"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/gorilla/mux"
+	"github.com/meddion/web-blog/pkg/models"
 )
 
-// StaticHandler serves static files
-type StaticHandler struct {
-	staticPath string
-}
-
-// NewStaticHandler is constructor for StaticHandler
-func NewStaticHandler(staticPath string) StaticHandler {
-	staticPath, err := filepath.Abs(staticPath)
-	if err != nil {
-		panic(err)
-	}
-	return StaticHandler{staticPath}
-}
-
-func (s StaticHandler) isPathEmpty(path string) bool {
-	return filepath.Clean(path) == ""
-}
-
-func (s StaticHandler) getFullPath(rawPath string) string {
-	return filepath.Join(s.staticPath, rawPath)
-}
-
 // StaticHandler serves static files from [staticPath] folder
-func (s StaticHandler) StaticHandler(w http.ResponseWriter, r *http.Request) {
-	path := s.getFullPath(mux.Vars(r)["path"])
-	// check whether a file exists at the given path
-	_, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		// file does not exist
-		sendErrorResp(w, "on finding the file", http.StatusNotFound)
-		return
-	} else if err != nil {
+func StaticHandler(w http.ResponseWriter, r *http.Request) {
+	dir, filename, ext := extractDirFilenameExt(mux.Vars(r)["path"])
+	file := models.File{Dir: dir, Name: filename, Ext: ext}
+	// Return the file from DB
+	if err := file.Get(r.Context()); err != nil {
 		sendErrorResp(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.ServeFile(w, r, path)
-
+	w.Header().Set("Content-Type", mime.TypeByExtension("."+file.Ext))
+	if _, err := w.Write(file.File.Data); err != nil {
+		sendErrorResp(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 // DeleteFileHandler is used for deleting files from the static dir
-func (s StaticHandler) DeleteFileHandler(w http.ResponseWriter, r *http.Request) {
-	if s.isPathEmpty(mux.Vars(r)["path"]) {
-		sendErrorResp(w, "on deleting a container folder", http.StatusBadRequest)
+func DeleteFileHandler(w http.ResponseWriter, r *http.Request) {
+	if isPathEmpty(mux.Vars(r)["path"]) {
+		sendErrorResp(w, "the path to the file is empty", http.StatusBadRequest)
 		return
 	}
-	path := s.getFullPath(mux.Vars(r)["path"])
-	if err := os.Remove(path); err != nil {
+	dir, filename, ext := extractDirFilenameExt(mux.Vars(r)["path"])
+	file := models.NewEmptyFile(dir, filename, ext)
+	// Remove file from DB
+	if res, err := file.Delete(r.Context()); err != nil {
 		sendErrorResp(w, err.Error(), http.StatusBadRequest)
-		return
+	} else if res.DeletedCount == 0 {
+		sendErrorResp(w, "the file wasn't found, thus wasn't deleted", http.StatusBadRequest)
+	} else {
+		sendSuccessResp(w, nil)
 	}
-	sendSuccessResp(w, nil)
 }
 
 // AddFileHandler is used for adding files to the static dir.
 // If the file with a specified name and extension
 // already exists in the folder - replace it.
-func (s StaticHandler) AddFileHandler(w http.ResponseWriter, r *http.Request) {
-	path := s.getFullPath(mux.Vars(r)["path"])
-	// Get byte slice from the request body
+func AddFileHandler(w http.ResponseWriter, r *http.Request) {
+	// Getting the byte slice from the request body
 	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		sendErrorResp(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
-	// Detecting filename and extension
-	var filename, extension string
-	structure := strings.Split(path, "/")
-	if fparts := strings.Split(structure[len(structure)-1], "."); len(fparts) > 1 {
-		filename = fparts[0]
-		if fparts[1] != "" {
-			extension = "." + fparts[1]
-		}
-		path = strings.Join(structure[:len(structure)-1], "/")
-	} else {
-		path = strings.Join(structure, "/")
-	}
-
-	if extension == "" {
-		extension = mimetype.Detect(data).Extension()
-	}
+	// Extracting directory, filename and extension info
+	dir, filename, ext := extractDirFilenameExt(mux.Vars(r)["path"])
 	if filename == "" {
 		filename = fmt.Sprintf("%d", time.Now().Unix())
 	}
-	filename = filename + extension
-
-	// Creating folder structure if needed
-	if err = os.MkdirAll(path, os.ModePerm); err != nil {
-		sendErrorResp(w, err.Error(), http.StatusBadRequest)
-		return
+	if ext == "" {
+		ext = strings.TrimLeft(mimetype.Detect(data).Extension(), ".")
 	}
 
-	// Writing the request body to a new created file
-	if err = ioutil.WriteFile(filepath.Join(path, filename), data, os.ModePerm); err != nil {
-		sendErrorResp(w, err.Error(), http.StatusBadRequest)
+	file := models.NewFile(dir, filename, ext, data)
+	// Saving the file as a blob into DB
+	if _, err = file.Save(r.Context()); err != nil {
+		sendErrorResp(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	sendSuccessResp(w, nil)
 }
 
 // GetFilenamesHandler is used for getting filenames in folders with a specific extention
-func (s StaticHandler) GetFilenamesHandler(w http.ResponseWriter, r *http.Request) {
-	if s.isPathEmpty(mux.Vars(r)["path"]) {
-		sendErrorResp(w, "on getting an empty path value", http.StatusBadRequest)
-		return
-	}
-	path := s.getFullPath(mux.Vars(r)["path"])
-	slice := strings.Split(path, "/")
-	// Getting the extention from the path paremeter
-	extension := slice[len(slice)-1]
-	// The rest is the folder path we wanna look at
-	dir := strings.Join(slice[:len(slice)-1], "/")
+func GetFilenamesHandler(w http.ResponseWriter, r *http.Request) {
+	dir, ext, _ := extractDirFilenameExt(mux.Vars(r)["path"])
 
-	filenames, err := ioutil.ReadDir(dir)
+	filenames, err := models.ListFilenamesWhere(r.Context(), dir, ext)
 	if err != nil {
-		sendErrorResp(w, err.Error(), http.StatusBadRequest)
+		sendErrorResp(w, err.Error(), http.StatusInternalServerError)
 		return
-	}
-	fileList := make([]string, 0)
-	for _, f := range filenames {
-		if f.IsDir() {
-			continue
-		}
-		filename := f.Name()
-		if extension != "*" && !strings.HasSuffix(filename, extension) {
-			continue
-		}
-		fileList = append(fileList, filename)
 	}
 	sendSuccessResp(w, map[string][]string{
-		"filenames": fileList,
+		"filenames": filenames,
 	})
+}
+
+func isPathEmpty(path string) bool {
+	return filepath.Clean(path) == "."
+}
+
+func extractDirFilenameExt(rawPath string) (string, string, string) {
+	path := filepath.Clean(rawPath)
+	dir := filepath.Dir(path)
+	filename := filepath.Base(path)
+
+	if filename == dir {
+		filename = ""
+	}
+	if dir == "." {
+		dir = "/"
+	}
+	var extension string
+	if strings.Contains(filename, ".") {
+		if part := strings.TrimLeft(filename, "."); part != filename {
+			filename = ""
+			extension = part
+		} else {
+			parts := strings.Split(filename, ".")
+			filename = parts[0]
+			if len(parts) > 1 {
+				extension = parts[1]
+			}
+		}
+	}
+
+	return dir, filename, extension
 }

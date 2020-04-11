@@ -91,18 +91,6 @@ func CreatePostsPipeline(r *http.Request, pageSize, pageNum int64) interface{} {
 		bson.M{"$sort": bson.M{"creation_time": sort}},
 		bson.M{"$skip": (pageNum - 1) * pageSize},
 		bson.M{"$limit": pageSize},
-		/* bson.M{"$lookup": bson.M{
-			"localField":   "author_id",
-			"from":         "users",
-			"foreignField": "_id",
-			"as":           "author",
-		}},
-		bson.M{"$unwind": "$author"},
-		bson.M{"$project": bson.M{
-			"author_id":            0,
-			"author.password":      0,
-			"author.creation_time": 0,
-		}}, */
 	}
 }
 

@@ -17,7 +17,6 @@ type Config struct {
 		Port          string `envconfig:"port" required:"true"`
 		OriginAllowed string `default:"*" split_words:"true"`
 		Domain        string `required:"true"`
-		StaticDir     string `default:"./../../static" split_words:"true"`
 	}
 }
 
